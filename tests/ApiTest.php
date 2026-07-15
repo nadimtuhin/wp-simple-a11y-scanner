@@ -4,6 +4,14 @@ use PHPUnit\Framework\TestCase;
 require_once __DIR__ . '/../includes/scanner.php';
 require_once __DIR__ . '/../includes/api.php';
 
+if ( ! function_exists( 'do_action' ) ) {
+    function do_action( $hook, ...$args ) {} // no-op stub for tests
+}
+
+if ( ! function_exists( 'simple_a11y_scanner_get_options' ) ) {
+    function simple_a11y_scanner_get_options() { return []; } // no-op stub
+}
+
 if ( ! class_exists( 'WP_REST_Request' ) ) {
     class WP_REST_Request {
         public array $params = [];

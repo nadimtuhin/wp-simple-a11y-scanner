@@ -27,8 +27,13 @@ class Api {
         if ( empty( $content ) ) {
             return new \WP_REST_Response( [ 'error' => 'Empty content' ], 400 );
         }
+        $opts    = function_exists( 'simple_a11y_scanner_get_options' ) ? simple_a11y_scanner_get_options() : [];
         $scanner = new Scanner();
-        $issues  = $scanner->scanContent( $content );
+        $issues  = $scanner->scanContent( $content, $opts );
+
+        // Fire notification hook (handled by notifications.php).
+        \do_action( 'simple_a11y_scanner_after_scan', $issues, '' );
+
         return new \WP_REST_Response( [ 'issues' => $issues, 'count' => count( $issues ) ], 200 );
     }
 
@@ -37,14 +42,15 @@ class Api {
         if ( empty( $content ) ) {
             return new \WP_REST_Response( [ 'error' => 'Empty content' ], 400 );
         }
+        $opts    = function_exists( 'simple_a11y_scanner_get_options' ) ? simple_a11y_scanner_get_options() : [];
         $scanner = new Scanner();
-        $issues  = $scanner->scanContent( $content );
+        $issues  = $scanner->scanContent( $content, $opts );
 
         $summary = [
-            'total'        => count( $issues ),
-            'missing_alt'  => 0,
-            'empty_link'   => 0,
-            'vague_link'   => 0,
+            'total'       => count( $issues ),
+            'missing_alt' => 0,
+            'empty_link'  => 0,
+            'vague_link'  => 0,
         ];
         foreach ( $issues as $issue ) {
             if ( isset( $summary[ $issue['type'] ] ) ) {

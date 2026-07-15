@@ -1,0 +1,1 @@
+{"version":1,"defects":{"ApiTest::testHandleScanReturnsIssues":4},"times":{"ScannerTest::testMissingAltAttribute":0,"ApiTest::testHandleScanReturnsIssues":0.003}}

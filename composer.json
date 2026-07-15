@@ -1,0 +1,16 @@
+{
+    "name": "nadimtuhin/wp-simple-a11y-scanner",
+    "description": "Simple WordPress A11y Scanner",
+    "type": "wordpress-plugin",
+    "require": {
+        "php": ">=7.4"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^9"
+    },
+    "autoload": {
+        "psr-4": {
+            "SimpleA11yScanner\\": "includes/"
+        }
+    }
+}

@@ -127,6 +127,24 @@ function simple_a11y_scanner_network_dashboard_widget(): void {
     echo '</ul>';
 }
 
+// Gutenberg: enqueue block editor inspector controls panel.
+add_action( 'enqueue_block_editor_assets', function () {
+    $asset_file = plugin_dir_path( __FILE__ ) . 'js/inspector-controls.asset.php';
+    $asset      = file_exists( $asset_file )
+        ? require $asset_file
+        : [ 'dependencies' => [ 'wp-plugins', 'wp-edit-post', 'wp-element', 'wp-components', 'wp-i18n' ], 'version' => '1.0.0' ];
+
+    wp_enqueue_script(
+        'simple-a11y-scanner-inspector',
+        plugins_url( 'js/inspector-controls.js', __FILE__ ),
+        $asset['dependencies'],
+        $asset['version'],
+        true
+    );
+
+    wp_set_script_translations( 'simple-a11y-scanner-inspector', 'wp-simple-a11y-scanner' );
+} );
+
 function simple_a11y_scanner_dashboard_widget() {
     echo '<p>' . esc_html__( 'Use the A11y Scanner REST API or WP-CLI to detect accessibility issues in your content.', 'wp-simple-a11y-scanner' ) . '</p>';
     echo '<p><strong>' . esc_html__( 'Endpoint:', 'wp-simple-a11y-scanner' ) . '</strong> <code>POST /wp-json/simple-a11y/v1/scan</code></p>';

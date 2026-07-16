@@ -15,6 +15,7 @@ require_once __DIR__ . '/includes/scanner.php';
 require_once __DIR__ . '/includes/api.php';
 require_once __DIR__ . '/includes/settings.php';
 require_once __DIR__ . '/includes/notifications.php';
+require_once __DIR__ . '/includes/pdf-export.php';
 
 // WP-CLI commands — only load in CLI context.
 if ( defined( 'WP_CLI' ) && WP_CLI ) {

@@ -56,6 +56,15 @@ function simple_a11y_scanner_register_settings() {
         [ 'key' => 'check_vague_links', 'label' => __( 'Flag links with vague text ("click here", "read more", etc.)', 'wp-simple-a11y-scanner' ) ]
     );
 
+    add_settings_field(
+        'check_inline_contrast',
+        __( 'Check inline CSS colour contrast', 'wp-simple-a11y-scanner' ),
+        'simple_a11y_scanner_field_checkbox',
+        'simple-a11y-scanner-settings',
+        'simple_a11y_scanner_checks',
+        [ 'key' => 'check_inline_contrast', 'label' => __( 'Flag elements with inline colour/background pairs failing WCAG AA (4.5:1)', 'wp-simple-a11y-scanner' ) ]
+    );
+
     add_settings_section(
         'simple_a11y_scanner_notifications',
         __( 'Email Notifications', 'wp-simple-a11y-scanner' ),
@@ -100,6 +109,7 @@ function simple_a11y_scanner_default_options() {
         'check_missing_alt'      => true,
         'check_empty_links'      => true,
         'check_vague_links'      => true,
+        'check_inline_contrast'  => true,
         'email_notifications'    => false,
         'notification_email'     => get_option( 'admin_email', '' ),
         'notification_threshold' => 1,
@@ -123,6 +133,7 @@ function simple_a11y_scanner_sanitize_options( $input ) {
     $clean['check_missing_alt']   = ! empty( $input['check_missing_alt'] );
     $clean['check_empty_links']   = ! empty( $input['check_empty_links'] );
     $clean['check_vague_links']   = ! empty( $input['check_vague_links'] );
+    $clean['check_inline_contrast'] = ! empty( $input['check_inline_contrast'] );
     $clean['email_notifications'] = ! empty( $input['email_notifications'] );
 
     $email = isset( $input['notification_email'] ) ? sanitize_email( $input['notification_email'] ) : '';

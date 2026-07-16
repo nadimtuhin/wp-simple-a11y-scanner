@@ -104,6 +104,29 @@ add_action( 'wp_dashboard_setup', function () {
     );
 } );
 
+// Multisite: register network dashboard widget.
+if ( function_exists( 'is_multisite' ) && is_multisite() ) {
+    add_action( 'wp_network_dashboard_setup', function () {
+        wp_add_dashboard_widget(
+            'simple_a11y_scanner_network_widget',
+            __( 'A11y Scanner — Network Overview', 'wp-simple-a11y-scanner' ),
+            'simple_a11y_scanner_network_dashboard_widget'
+        );
+    } );
+}
+
+function simple_a11y_scanner_network_dashboard_widget(): void {
+    $sites = get_sites( [ 'number' => 50 ] );
+    echo '<p><strong>' . esc_html__( 'Sites in this network:', 'wp-simple-a11y-scanner' ) . '</strong> ' . count( $sites ) . '</p>';
+    echo '<ul>';
+    foreach ( $sites as $site ) {
+        echo '<li><a href="' . esc_url( get_admin_url( $site->blog_id, 'admin.php?page=simple-a11y-scanner' ) ) . '">'
+            . esc_html( get_blog_option( $site->blog_id, 'blogname' ) )
+            . '</a></li>';
+    }
+    echo '</ul>';
+}
+
 function simple_a11y_scanner_dashboard_widget() {
     echo '<p>' . esc_html__( 'Use the A11y Scanner REST API or WP-CLI to detect accessibility issues in your content.', 'wp-simple-a11y-scanner' ) . '</p>';
     echo '<p><strong>' . esc_html__( 'Endpoint:', 'wp-simple-a11y-scanner' ) . '</strong> <code>POST /wp-json/simple-a11y/v1/scan</code></p>';

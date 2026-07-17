@@ -117,9 +117,7 @@ class Api {
         ] );
     }
 
-    // -------------------------------------------------------------------------
     // v1 handlers
-    // -------------------------------------------------------------------------
 
     public function handleScan( $request ) {
         $rl = $this->checkRateLimit();
@@ -131,6 +129,15 @@ class Api {
         if ( empty( $content ) ) {
             return new \WP_REST_Response( [ 'error' => 'Empty content' ], 400 );
         }
+
+        /**
+         * Fires before a v1 REST scan begins.
+         *
+         * @param string           $content The HTML content about to be scanned.
+         * @param \WP_REST_Request $request The REST request object.
+         */
+        \do_action( 'simple_a11y_scanner_before_scan', $content, $request );
+
         $opts    = function_exists( 'simple_a11y_scanner_get_options' ) ? simple_a11y_scanner_get_options() : [];
         $scanner = new Scanner();
         $issues  = $scanner->scanContent( $content, $opts );
@@ -138,11 +145,23 @@ class Api {
 
         \do_action( 'simple_a11y_scanner_after_scan', $issues, '' );
 
-        return new \WP_REST_Response( [
+        $response_data = [
             'issues'               => $issues,
             'count'                => count( $issues ),
             'keyboard_nav_metrics' => $tab['metrics'],
-        ], 200 );
+        ];
+
+        /**
+         * Filter the v1 scan REST API response data before it is returned.
+         * Use to add, remove, or transform fields in the response.
+         *
+         * @param array            $response_data Response array.
+         * @param \WP_REST_Request $request       Original REST request.
+         * @param array[]          $issues        Issues found.
+         */
+        $response_data = \apply_filters( 'simple_a11y_scanner_api_response', $response_data, $request, $issues );
+
+        return new \WP_REST_Response( $response_data, 200 );
     }
 
     public function handleScanSummary( $request ) {
@@ -168,6 +187,15 @@ class Api {
                 $summary[ $issue['type'] ]++;
             }
         }
+
+        /**
+         * Filter the scan summary data before returning to client.
+         *
+         * @param array    $summary  Summary counts keyed by issue type.
+         * @param array[]  $issues   Full issue list.
+         * @param string   $content  Scanned HTML content.
+         */
+        $summary = \apply_filters( 'simple_a11y_scanner_scan_summary', $summary, $issues, $content );
 
         $tab = $scanner->analyseTabOrder( $content );
 
@@ -198,6 +226,15 @@ class Api {
             return new \WP_REST_Response( [ 'error' => $result->get_error_message() ], 502 );
         }
 
+        /**
+         * Filter the list of URLs extracted from the sitemap before returning.
+         *
+         * @param string[] $result      Array of URLs.
+         * @param string   $url         The sitemap URL that was parsed.
+         * @param \WP_REST_Request $request REST request object.
+         */
+        $result = \apply_filters( 'simple_a11y_scanner_sitemap_urls', $result, $url, $request );
+
         return new \WP_REST_Response( [ 'sitemap_url' => $url, 'urls' => $result, 'count' => count( $result ) ], 200 );
     }
 
@@ -214,9 +251,7 @@ class Api {
         ], 200 );
     }
 
-    // -------------------------------------------------------------------------
     // v2 handlers
-    // -------------------------------------------------------------------------
 
     /**
      * v2 scan: includes severity scoring and writes audit log.
@@ -232,6 +267,14 @@ class Api {
             return new \WP_REST_Response( [ 'error' => 'Empty content' ], 400 );
         }
 
+        /**
+         * Fires before a v2 REST scan begins.
+         *
+         * @param string           $content The HTML content about to be scanned.
+         * @param \WP_REST_Request $request The REST request object.
+         */
+        \do_action( 'simple_a11y_scanner_before_scan', $content, $request );
+
         $opts    = function_exists( 'simple_a11y_scanner_get_options' ) ? simple_a11y_scanner_get_options() : [];
         $scanner = new Scanner();
         $issues  = $scanner->scanContent( $content, $opts );
@@ -239,9 +282,19 @@ class Api {
 
         // Attach severity to each issue.
         foreach ( $issues as &$issue ) {
-            $issue['severity'] = function_exists( 'simple_a11y_scanner_severity' )
+            $severity = function_exists( 'simple_a11y_scanner_severity' )
                 ? simple_a11y_scanner_severity( $issue['type'] )
                 : 'minor';
+
+            /**
+             * Filter the severity assigned to an individual issue.
+             * Override to promote or demote specific issue types per your context.
+             *
+             * @param string $severity  Computed severity ('critical'|'major'|'minor').
+             * @param string $type      Issue type key (e.g. 'missing_alt').
+             * @param array  $issue     Full issue array.
+             */
+            $issue['severity'] = \apply_filters( 'simple_a11y_scanner_issue_severity', $severity, $issue['type'], $issue );
         }
         unset( $issue );
 
@@ -251,13 +304,24 @@ class Api {
 
         \do_action( 'simple_a11y_scanner_after_scan', $issues, '' );
 
-        return new \WP_REST_Response( [
+        $response_data = [
             'issues'               => $issues,
             'count'                => count( $issues ),
             'score'                => $score_data,
             'keyboard_nav_metrics' => $tab['metrics'],
             'api_version'          => 'v2',
-        ], 200 );
+        ];
+
+        /**
+         * Filter the v2 scan REST API response data before it is returned.
+         *
+         * @param array            $response_data Response data.
+         * @param \WP_REST_Request $request       Original REST request.
+         * @param array[]          $issues        Issues with severity attached.
+         */
+        $response_data = \apply_filters( 'simple_a11y_scanner_api_response_v2', $response_data, $request, $issues );
+
+        return new \WP_REST_Response( $response_data, 200 );
     }
 
     /**
@@ -271,6 +335,17 @@ class Api {
         $page     = (int) $request->get_param( 'page' );
 
         $entries  = AuditLog::getEntries( $per_page, $page );
+
+        /**
+         * Filter audit log entries before returning via REST.
+         * Use to redact sensitive data or add computed fields.
+         *
+         * @param array $entries   Raw log entry rows.
+         * @param int   $per_page  Requested page size.
+         * @param int   $page      Current page number.
+         */
+        $entries  = \apply_filters( 'simple_a11y_scanner_audit_log_entries', $entries, $per_page, $page );
+
         $total    = AuditLog::countEntries();
         $response = new \WP_REST_Response( $entries, 200 );
         $response->header( 'X-WP-Total', $total );
@@ -331,6 +406,15 @@ class Api {
             ];
         }
 
+        /**
+         * Filter social meta issues before returning via REST.
+         * Use to add custom social meta checks or suppress known false positives.
+         *
+         * @param array[] $issues   Issues found in social meta fields.
+         * @param int     $post_id  Post being scanned.
+         */
+        $issues = \apply_filters( 'simple_a11y_scanner_social_meta_issues', $issues, $post_id );
+
         return new \WP_REST_Response( [
             'post_id' => $post_id,
             'issues'  => $issues,
@@ -348,6 +432,15 @@ class Api {
      */
     public function handleListRules( $request ) {
         $rules = \get_option( 'simple_a11y_scanner_custom_rules', [] );
+
+        /**
+         * Filter the custom scan rules returned by the REST API.
+         * Use to inject built-in rules, disable rules, or reorder them.
+         *
+         * @param array[] $rules  Stored custom rules.
+         */
+        $rules = \apply_filters( 'simple_a11y_scanner_scan_rules', $rules );
+
         return new \WP_REST_Response( [ 'rules' => $rules, 'count' => count( $rules ) ], 200 );
     }
 
@@ -368,14 +461,30 @@ class Api {
                 'label'    => sanitize_text_field( $rule['label'] ?? '' ),
                 'pattern'  => sanitize_text_field( $rule['pattern'] ),
                 'message'  => sanitize_text_field( $rule['message'] ?? '' ),
-                                'severity' => ( isset( $rule['severity'] ) && in_array( $rule['severity'], [ 'critical', 'major', 'minor' ], true ) )
+                'severity' => ( isset( $rule['severity'] ) && in_array( $rule['severity'], [ 'critical', 'major', 'minor' ], true ) )
                     ? $rule['severity']
                     : 'minor',
                 'enabled'  => ! empty( $rule['enabled'] ),
             ];
         }
 
+        /**
+         * Fires before custom rules are persisted.
+         * Use to validate, transform, or audit rule changes.
+         *
+         * @param array[] $clean   Sanitized rules about to be saved.
+         * @param array   $raw     Raw input from the request.
+         */
+        \do_action( 'simple_a11y_scanner_before_save_rules', $clean, $raw );
+
         \update_option( 'simple_a11y_scanner_custom_rules', $clean );
+
+        /**
+         * Fires after custom rules are saved to the database.
+         *
+         * @param array[] $clean  The saved rules.
+         */
+        \do_action( 'simple_a11y_scanner_after_save_rules', $clean );
 
         return new \WP_REST_Response( [ 'saved' => count( $clean ), 'rules' => $clean ], 200 );
     }

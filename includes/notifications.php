@@ -32,6 +32,26 @@ function simple_a11y_scanner_send_notification( $url, array $issues, array $opts
         return false;
     }
 
+    /**
+     * Filter the notification recipient email address(es).
+     * Return a string for a single recipient, or a comma-separated list.
+     * Replaces the simple_a11y_scanner_notification_email filter below.
+     *
+     * Example — send to multiple recipients:
+     *   add_filter( 'simple_a11y_scanner_email_recipients', function( $emails ) {
+     *       return array_merge( $emails, [ 'manager@example.com' ] );
+     *   } );
+     *
+     * @param string[] $recipients  Array of recipient email addresses.
+     * @param string   $url         Scanned URL.
+     * @param array[]  $issues      Issues found.
+     */
+    $recipients = apply_filters( 'simple_a11y_scanner_email_recipients', [ $to ], $url, $issues );
+    $to         = implode( ', ', array_filter( array_map( 'sanitize_email', $recipients ) ) );
+    if ( empty( $to ) ) {
+        return false;
+    }
+
     $subject = sprintf(
         /* translators: %d = issue count, %s = URL */
         _n(
@@ -89,7 +109,27 @@ function simple_a11y_scanner_send_notification( $url, array $issues, array $opts
      */
     $message = apply_filters( 'simple_a11y_scanner_notification_message', $message, $url, $issues );
 
-    $sent = wp_mail( $to, $subject, $message );
+    /**
+     * Filter the wp_mail headers for the notification email.
+     * Use to add CC, BCC, or change content-type (e.g. HTML email).
+     *
+     * @param string[]|string $headers  wp_mail headers.
+     * @param string          $url      Scanned URL.
+     * @param array[]         $issues   Issues found.
+     */
+    $headers = apply_filters( 'simple_a11y_scanner_notification_headers', [], $url, $issues );
+
+    /**
+     * Fires before the notification email is sent.
+     *
+     * @param string   $to      Recipient.
+     * @param string   $subject Email subject.
+     * @param string   $url     Scanned URL.
+     * @param array[]  $issues  Issues found.
+     */
+    do_action( 'simple_a11y_scanner_before_notification', $to, $subject, $url, $issues );
+
+    $sent = wp_mail( $to, $subject, $message, $headers );
 
     /**
      * Fires after a notification email is attempted.

@@ -24,10 +24,20 @@ function simple_a11y_scanner_fetch_sitemap( $sitemap_url, $depth = 0 ) {
         return []; // guard against deeply nested sitemap indexes
     }
 
-    $response = wp_remote_get( esc_url_raw( $sitemap_url ), [
+    /**
+     * Filter the HTTP request arguments used when fetching a sitemap.
+     * Use to add authentication headers, change timeout, etc.
+     *
+     * @param array  $args         wp_remote_get args.
+     * @param string $sitemap_url  URL being fetched.
+     * @param int    $depth        Current recursion depth.
+     */
+    $request_args = apply_filters( 'simple_a11y_scanner_sitemap_request_args', [
         'timeout'    => 15,
         'user-agent' => 'SimpleA11yScanner/1.0',
-    ] );
+    ], $sitemap_url, $depth );
+
+    $response = wp_remote_get( esc_url_raw( $sitemap_url ), $request_args );
 
     if ( is_wp_error( $response ) ) {
         return $response;
@@ -63,7 +73,14 @@ function simple_a11y_scanner_fetch_sitemap( $sitemap_url, $depth = 0 ) {
                 $urls = array_merge( $urls, $child_result );
             }
         }
-        return $urls;
+
+        /**
+         * Filter URLs extracted from a sitemap index.
+         *
+         * @param string[] $urls         Merged URLs from all child sitemaps.
+         * @param string   $sitemap_url  The sitemap index URL.
+         */
+        return apply_filters( 'simple_a11y_scanner_sitemap_index_urls', $urls, $sitemap_url );
     }
 
     // Regular sitemap: contains <url><loc>…</loc></url> entries.
@@ -76,7 +93,14 @@ function simple_a11y_scanner_fetch_sitemap( $sitemap_url, $depth = 0 ) {
         }
     }
 
-    return $urls;
+    /**
+     * Filter URLs extracted from a regular sitemap file.
+     * Use to deduplicate, validate, or restrict scanned URLs.
+     *
+     * @param string[] $urls         URLs extracted from the sitemap.
+     * @param string   $sitemap_url  The sitemap URL that was parsed.
+     */
+    return apply_filters( 'simple_a11y_scanner_sitemap_parsed_urls', $urls, $sitemap_url );
 }
 
 /**
@@ -94,6 +118,15 @@ function simple_a11y_scanner_discover_sitemap( $site_url ) {
         $site_url . '/sitemap_index.xml',
         $site_url . '/wp-sitemap.xml',
     ];
+
+    /**
+     * Filter the candidate URLs tried when auto-discovering a sitemap.
+     * Add your own sitemap path conventions here.
+     *
+     * @param string[] $candidates  Candidate URLs to probe.
+     * @param string   $site_url    Base site URL being checked.
+     */
+    $candidates = apply_filters( 'simple_a11y_scanner_sitemap_candidates', $candidates, $site_url );
 
     foreach ( $candidates as $candidate ) {
         $r = wp_remote_head( $candidate, [ 'timeout' => 8, 'user-agent' => 'SimpleA11yScanner/1.0' ] );

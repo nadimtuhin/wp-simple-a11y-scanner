@@ -21,7 +21,17 @@ function simple_a11y_scanner_on_publish( int $post_id, $post ): void {
     if ( wp_is_post_revision( $post_id ) || wp_is_post_autosave( $post_id ) ) {
         return;
     }
-    if ( ! in_array( get_post_type( $post_id ), [ 'post', 'page' ], true ) ) {
+
+    /**
+     * Filter the post types that trigger an automatic scan on publish/save.
+     * Add custom post types to extend auto-scan coverage.
+     *
+     * @param string[] $post_types  Post type slugs that trigger auto-scan.
+     * @param int      $post_id     Post being saved.
+     */
+    $scanned_post_types = apply_filters( 'simple_a11y_scanner_scanned_post_types', [ 'post', 'page' ], $post_id );
+
+    if ( ! in_array( get_post_type( $post_id ), $scanned_post_types, true ) ) {
         return;
     }
 
@@ -36,7 +46,8 @@ function simple_a11y_scanner_on_publish( int $post_id, $post ): void {
     update_post_meta( $post_id, '_a11y_scan_time', current_time( 'mysql' ) );
 
     /**
-     * Fires after post-publish scan.
+     * Fires after post-publish scan completes.
+     * Use to send alerts, update dashboards, or log results.
      *
      * @param int   $post_id    Post ID.
      * @param array $issues     Issues found.

@@ -25,6 +25,16 @@ function simple_a11y_scanner_schedule_category( int $cat_id, string $frequency )
     }
 
     $schedules = [ 'daily', 'weekly', 'twicedaily' ];
+
+    /**
+     * Filter the valid WP-Cron schedule names for category scans.
+     * Add custom schedules registered via cron_schedules filter.
+     *
+     * @param string[] $schedules  Allowed schedule identifiers.
+     * @param int      $cat_id     Category term ID.
+     */
+    $schedules = apply_filters( 'simple_a11y_scanner_category_schedules', $schedules, $cat_id );
+
     if ( ! in_array( $frequency, $schedules, true ) ) {
         $frequency = 'weekly';
     }
@@ -39,15 +49,35 @@ function simple_a11y_scanner_schedule_category( int $cat_id, string $frequency )
  */
 function simple_a11y_scanner_run_category_scan( int $cat_id ): void {
     $opts = function_exists( 'simple_a11y_scanner_get_options' ) ? simple_a11y_scanner_get_options() : [];
-    $posts = get_posts( [
+
+    $query_args = [
         'category'    => $cat_id,
         'post_status' => 'publish',
         'numberposts' => 100,
-    ] );
+    ];
+
+    /**
+     * Filter the WP_Query arguments used when fetching posts for a category scan.
+     * Use to increase post limit, add post types, or apply date filters.
+     *
+     * @param array $query_args  get_posts() arguments.
+     * @param int   $cat_id      Category term ID being scanned.
+     */
+    $query_args = apply_filters( 'simple_a11y_scanner_category_scan_query', $query_args, $cat_id );
+
+    $posts = get_posts( $query_args );
 
     if ( empty( $posts ) ) {
         return;
     }
+
+    /**
+     * Fires before a category scan begins processing its posts.
+     *
+     * @param int      $cat_id  Category term ID.
+     * @param WP_Post[] $posts  Posts about to be scanned.
+     */
+    do_action( 'simple_a11y_scanner_before_category_scan', $cat_id, $posts );
 
     $scanner    = new \SimpleA11yScanner\Scanner();
     $all_issues = 0;

@@ -59,6 +59,18 @@ class AuditLog {
      */
     public static function insert( string $url, int $post_id, array $issues, string $client_ip = '' ): void {
         global $wpdb;
+
+        /**
+         * Fires before a scan log entry is written to the database.
+         * Use to attach extra context, notify external systems, or conditionally skip logging.
+         *
+         * @param string   $url        Scanned URL.
+         * @param int      $post_id    Post ID (0 for REST/CLI scans).
+         * @param array[]  $issues     Issues found.
+         * @param string   $client_ip  Requester IP address.
+         */
+        \do_action( 'simple_a11y_scanner_before_audit_log_insert', $url, $post_id, $issues, $client_ip );
+
         $score_data = function_exists( 'simple_a11y_scanner_score' ) ? simple_a11y_scanner_score( $issues ) : [ 'score' => count( $issues ) ];
 
         $worst = 'minor';
@@ -82,6 +94,16 @@ class AuditLog {
             ],
             [ '%s', '%d', '%d', '%s', '%d', '%d', '%s', '%s' ]
         );
+
+        /**
+         * Fires after a scan log entry has been written to the database.
+         *
+         * @param string $url        Scanned URL.
+         * @param int    $post_id    Post ID.
+         * @param array  $issues     Issues found.
+         * @param int    $insert_id  $wpdb->insert_id for the new row.
+         */
+        \do_action( 'simple_a11y_scanner_after_audit_log_insert', $url, $post_id, $issues, $wpdb->insert_id );
     }
 
     /**

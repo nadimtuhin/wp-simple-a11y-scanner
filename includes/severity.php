@@ -27,14 +27,30 @@ function simple_a11y_scanner_severity( string $type ): string {
     ];
 
     /**
-     * Filter the severity map.
+     * Filter the severity map used to assign severity labels to issue types.
+     * Add custom types, override built-in mappings, or change thresholds.
+     *
+     * Example — promote vague_link to major:
+     *   add_filter( 'simple_a11y_scanner_severity_map', function( $map ) {
+     *       $map['vague_link'] = 'major';
+     *       return $map;
+     *   } );
      *
      * @param array  $map  Default map of type => severity.
      * @param string $type The issue type being looked up.
      */
     $map = apply_filters( 'simple_a11y_scanner_severity_map', $map, $type );
 
-    return $map[ $type ] ?? 'minor';
+    $severity = $map[ $type ] ?? 'minor';
+
+    /**
+     * Filter the final severity for a specific issue type after map lookup.
+     * Fires after simple_a11y_scanner_severity_map, giving per-type override control.
+     *
+     * @param string $severity  Computed severity ('critical'|'major'|'minor').
+     * @param string $type      Issue type key (e.g. 'missing_alt').
+     */
+    return apply_filters( 'simple_a11y_scanner_issue_severity', $severity, $type );
 }
 
 /**
@@ -51,5 +67,13 @@ function simple_a11y_scanner_score( array $issues ): array {
         $counts[ $sev ]++;
     }
     $counts['score'] = ( $counts['critical'] * 3 ) + ( $counts['major'] * 2 ) + $counts['minor'];
-    return $counts;
+
+    /**
+     * Filter the computed score data for a set of issues.
+     * Use to override weights or add custom scoring dimensions.
+     *
+     * @param array   $counts  Score data: critical, major, minor, score.
+     * @param array[] $issues  The issues that were scored.
+     */
+    return apply_filters( 'simple_a11y_scanner_score', $counts, $issues );
 }

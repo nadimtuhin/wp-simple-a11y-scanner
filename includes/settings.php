@@ -105,7 +105,7 @@ add_action( 'admin_init', 'simple_a11y_scanner_register_settings' );
  * Default option values.
  */
 function simple_a11y_scanner_default_options() {
-    return [
+    $defaults = [
         'check_missing_alt'      => true,
         'check_empty_links'      => true,
         'check_vague_links'      => true,
@@ -118,14 +118,30 @@ function simple_a11y_scanner_default_options() {
         'rate_limit_window'      => 60,
         'scan_capability'        => 'manage_options',
     ];
+
+    /**
+     * Filter the default plugin option values.
+     * Use to add options for custom extensions without touching plugin code.
+     *
+     * @param array $defaults  Default option key => value pairs.
+     */
+    return apply_filters( 'simple_a11y_scanner_default_options', $defaults );
 }
 
 /**
  * Get merged options (defaults + saved).
  */
 function simple_a11y_scanner_get_options() {
-    $saved = get_option( 'simple_a11y_scanner_options', [] );
-    return wp_parse_args( $saved, simple_a11y_scanner_default_options() );
+    $saved   = get_option( 'simple_a11y_scanner_options', [] );
+    $options = wp_parse_args( $saved, simple_a11y_scanner_default_options() );
+
+    /**
+     * Filter the merged plugin options returned to all callers.
+     * Use to override options dynamically (e.g. per user role or per request).
+     *
+     * @param array $options  Merged option values (saved + defaults).
+     */
+    return apply_filters( 'simple_a11y_scanner_options', $options );
 }
 
 /**
@@ -157,10 +173,17 @@ function simple_a11y_scanner_sanitize_options( $input ) {
     $cap = sanitize_key( $input['scan_capability'] ?? 'manage_options' );
     $clean['scan_capability'] = in_array( $cap, $allowed_caps, true ) ? $cap : 'manage_options';
 
-    return $clean;
+    /**
+     * Filter the sanitized options array before it is saved to the database.
+     * Use to sanitize and persist additional custom options added via
+     * simple_a11y_scanner_default_options filter.
+     *
+     * @param array $clean  Sanitized option values.
+     * @param array $input  Raw unsanitized input from the settings form.
+     */
+    return apply_filters( 'simple_a11y_scanner_sanitize_options', $clean, $input );
 }
 
-/* ── Field renderers ─────────────────────────────────────────────────── */
 
 function simple_a11y_scanner_field_checkbox( $args ) {
     $opts = simple_a11y_scanner_get_options();
@@ -196,7 +219,6 @@ function simple_a11y_scanner_field_number( $args ) {
     );
 }
 
-/* ── Settings page HTML ──────────────────────────────────────────────── */
 
 function simple_a11y_scanner_settings_page() {
     if ( ! current_user_can( 'manage_options' ) ) {

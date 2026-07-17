@@ -42,16 +42,35 @@ function simple_a11y_scanner_run_scheduled_audit(): void {
         return;
     }
 
-    $posts = get_posts( [
+    $query_args = [
         'post_type'      => 'post',
         'post_status'    => 'publish',
         'numberposts'    => 50,
         'fields'         => 'ids',
-    ] );
+    ];
+
+    /**
+     * Filter the query arguments used when fetching posts for the scheduled audit.
+     * Use to add post types, date ranges, or adjust the post limit.
+     *
+     * @param array $query_args  get_posts() arguments.
+     * @param array $opts        Current plugin options.
+     */
+    $query_args = apply_filters( 'simple_a11y_scanner_scheduled_audit_query', $query_args, $opts );
+
+    $posts = get_posts( $query_args );
 
     if ( empty( $posts ) ) {
         return;
     }
+
+    /**
+     * Fires before the scheduled audit begins scanning posts.
+     *
+     * @param int[] $posts  Post IDs about to be scanned.
+     * @param array $opts   Plugin options in effect.
+     */
+    do_action( 'simple_a11y_scanner_before_scheduled_audit', $posts, $opts );
 
     $scanner    = new \SimpleA11yScanner\Scanner();
     $all_issues = [];
@@ -73,6 +92,16 @@ function simple_a11y_scanner_run_scheduled_audit(): void {
     }
 
     $to = sanitize_email( $opts['notification_email'] ?? get_option( 'admin_email', '' ) );
+
+    /**
+     * Filter the recipient email for the scheduled audit summary email.
+     *
+     * @param string $to        Recipient email address.
+     * @param array  $all_issues All issues found across posts.
+     * @param int    $post_count Posts scanned.
+     */
+    $to = apply_filters( 'simple_a11y_scanner_scheduled_audit_email', $to, $all_issues, $post_count );
+
     if ( ! is_email( $to ) ) {
         return;
     }

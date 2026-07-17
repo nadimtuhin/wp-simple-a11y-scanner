@@ -74,7 +74,23 @@ class Simple_A11y_Scanner_CLI {
             ? simple_a11y_scanner_get_options()
             : [];
 
+        /**
+         * Fires before a WP-CLI scan begins.
+         *
+         * @param string $url   URL being scanned.
+         * @param array  $opts  Plugin options in use.
+         */
+        do_action( 'simple_a11y_scanner_before_scan', $url, $opts );
+
         $issues = $scanner->scanContent( $html, $opts );
+
+        /**
+         * Fires after a WP-CLI scan completes.
+         *
+         * @param string  $url    URL that was scanned.
+         * @param array[] $issues Issues found.
+         */
+        do_action( 'simple_a11y_scanner_after_scan', $issues, $url );
 
         if ( empty( $issues ) ) {
             WP_CLI::success( 'No accessibility issues found.' );

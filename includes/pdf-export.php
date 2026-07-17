@@ -91,7 +91,8 @@ function simple_a11y_scanner_build_pdf_html( array $issues, string $title, strin
     }
 
     $count = count( $issues );
-    return '<!DOCTYPE html><html><head><meta charset="utf-8"><style>' . $css . '</style></head><body>'
+
+    $html = '<!DOCTYPE html><html><head><meta charset="utf-8"><style>' . $css . '</style></head><body>'
         . '<h1>' . esc_html( $title ) . '</h1>'
         . '<p>' . sprintf( esc_html__( 'Total issues: %d', 'wp-simple-a11y-scanner' ), $count ) . '</p>'
         . '<table><thead><tr>'
@@ -101,6 +102,17 @@ function simple_a11y_scanner_build_pdf_html( array $issues, string $title, strin
         . '<th>' . esc_html__( 'Element', 'wp-simple-a11y-scanner' ) . '</th>'
         . '</tr></thead><tbody>' . $rows . '</tbody></table>'
         . '</body></html>';
+
+    /**
+     * Filter the full HTML document used to render the PDF report.
+     * Use to add custom sections, modify layout, or inject branding.
+     *
+     * @param string  $html     Complete HTML document string.
+     * @param array[] $issues   Issues included in the report.
+     * @param string  $title    Report title.
+     * @param string  $template Template slug in use.
+     */
+    return apply_filters( 'simple_a11y_scanner_pdf_content', $html, $issues, $title, $template );
 }
 
 /**
@@ -119,6 +131,15 @@ function simple_a11y_scanner_export_pdf( array $issues, string $title = '', stri
 
     $title = $title ?: __( 'A11y Scan Report', 'wp-simple-a11y-scanner' );
 
+    /**
+     * Fires before the PDF is generated and streamed to the browser.
+     *
+     * @param array[] $issues   Issues to be included in the PDF.
+     * @param string  $title    Report title.
+     * @param string  $template Template slug.
+     */
+    do_action( 'simple_a11y_scanner_before_pdf_export', $issues, $title, $template );
+
     $options = new \Dompdf\Options();
     $options->set( 'isRemoteEnabled', false );
     $dompdf = new \Dompdf\Dompdf( $options );
@@ -126,6 +147,16 @@ function simple_a11y_scanner_export_pdf( array $issues, string $title = '', stri
     $dompdf->setPaper( 'A4', 'landscape' );
     $dompdf->render();
     $dompdf->stream( 'a11y-scan-report.pdf', [ 'Attachment' => true ] );
+
+    /**
+     * Fires after the PDF has been rendered (just before exit).
+     * Note: headers have already been sent at this point.
+     *
+     * @param array[] $issues   Issues in the report.
+     * @param string  $title    Report title.
+     */
+    do_action( 'simple_a11y_scanner_after_pdf_export', $issues, $title );
+
     exit;
 }
 

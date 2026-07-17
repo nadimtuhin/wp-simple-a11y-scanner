@@ -69,6 +69,17 @@ function simple_a11y_scanner_badge( string $content ): string {
         $time_txt
     );
 
+    /**
+     * Filter the frontend a11y badge HTML before it is appended to post content.
+     * Return an empty string to suppress the badge entirely.
+     *
+     * @param string $badge      Badge HTML.
+     * @param int    $post_id    Current post ID.
+     * @param array  $issues     Issues stored for this post.
+     * @param array  $score_data Score data (critical, major, minor, score).
+     */
+    $badge = apply_filters( 'simple_a11y_scanner_frontend_badge', $badge, $post_id, $issues, $score_data );
+
     return $content . $badge;
 }
 add_filter( 'the_content', 'simple_a11y_scanner_badge' );

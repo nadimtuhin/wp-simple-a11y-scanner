@@ -12,9 +12,7 @@ if ( ! defined( 'ABSPATH' ) ) {
     exit;
 }
 
-// -------------------------------------------------------------------------
 // Scheduling helpers
-// -------------------------------------------------------------------------
 
 /**
  * Check whether Action Scheduler is available.
@@ -39,6 +37,23 @@ function simple_a11y_scanner_enqueue_bulk( array $urls, $batch_id = '' ) {
     if ( '' === $batch_id ) {
         $batch_id = wp_generate_uuid4();
     }
+
+    /**
+     * Filter the list of URLs before they are queued for bulk scanning.
+     * Use to remove duplicates, filter out certain domains, or reorder URLs.
+     *
+     * @param string[] $urls      URLs about to be enqueued.
+     * @param string   $batch_id  Batch identifier.
+     */
+    $urls = apply_filters( 'simple_a11y_scanner_bulk_scan_urls', $urls, $batch_id );
+
+    /**
+     * Fires before bulk scan jobs are enqueued.
+     *
+     * @param string[] $urls      URLs to be scanned.
+     * @param string   $batch_id  Batch identifier.
+     */
+    do_action( 'simple_a11y_scanner_before_bulk_scan', $urls, $batch_id );
 
     $count = 0;
     foreach ( $urls as $url ) {
@@ -100,9 +115,7 @@ function simple_a11y_scanner_enqueue_from_sitemap( $sitemap_url ) {
     return simple_a11y_scanner_enqueue_bulk( $urls );
 }
 
-// -------------------------------------------------------------------------
 // Worker callback — runs in the background for each URL
-// -------------------------------------------------------------------------
 
 /**
  * Scan a single URL and persist the result.
@@ -112,6 +125,14 @@ function simple_a11y_scanner_enqueue_from_sitemap( $sitemap_url ) {
  * @param string $batch_id  Batch identifier.
  */
 function simple_a11y_scanner_process_url( $url, $batch_id = '' ) {
+    /**
+     * Fires before a single URL is fetched and scanned during a bulk scan.
+     *
+     * @param string $url       URL about to be scanned.
+     * @param string $batch_id  Batch identifier.
+     */
+    do_action( 'simple_a11y_scanner_before_scan', $url, $batch_id );
+
     $response = wp_remote_get( esc_url_raw( $url ), [
         'timeout'    => 20,
         'user-agent' => 'SimpleA11yScanner/1.0',
@@ -134,9 +155,7 @@ function simple_a11y_scanner_process_url( $url, $batch_id = '' ) {
 }
 add_action( 'simple_a11y_scanner_scan_url', 'simple_a11y_scanner_process_url', 10, 2 );
 
-// -------------------------------------------------------------------------
 // Result storage (lightweight — transient-based, 7-day TTL)
-// -------------------------------------------------------------------------
 
 /**
  * Persist scan results for a URL within a batch.
@@ -153,12 +172,23 @@ function simple_a11y_scanner_store_result( $batch_id, $url, array $issues, $erro
         $results = [];
     }
 
-    $results[ $url ] = [
+    $entry = [
         'issues' => $issues,
         'count'  => count( $issues ),
         'error'  => $error,
         'time'   => current_time( 'mysql' ),
     ];
+
+    /**
+     * Filter a single bulk-scan result entry before it is persisted.
+     * Use to normalise, enrich, or redact result data.
+     *
+     * @param array    $entry     Result data for this URL.
+     * @param string   $url       URL that was scanned.
+     * @param string   $batch_id  Batch identifier.
+     * @param array[]  $issues    Raw issues returned by the scanner.
+     */
+    $results[ $url ] = apply_filters( 'simple_a11y_scanner_bulk_result_entry', $entry, $url, $batch_id, $issues );
 
     set_transient( $key, $results, WEEK_IN_SECONDS );
 }
@@ -170,13 +200,20 @@ function simple_a11y_scanner_store_result( $batch_id, $url, array $issues, $erro
  * @return array[]  Keyed by URL.
  */
 function simple_a11y_scanner_get_batch_results( $batch_id ) {
-    $key = 'sas_batch_' . md5( $batch_id );
-    return (array) get_transient( $key );
+    $key     = 'sas_batch_' . md5( $batch_id );
+    $results = (array) get_transient( $key );
+
+    /**
+     * Filter the batch results returned to callers.
+     * Use to add computed aggregates or filter specific URLs.
+     *
+     * @param array[]  $results   Results keyed by URL.
+     * @param string   $batch_id  Batch identifier.
+     */
+    return apply_filters( 'simple_a11y_scanner_batch_results', $results, $batch_id );
 }
 
-// -------------------------------------------------------------------------
 // REST endpoints for bulk scan
-// -------------------------------------------------------------------------
 
 add_action( 'rest_api_init', function () {
 
@@ -235,6 +272,15 @@ function simple_a11y_scanner_rest_bulk_scan( \WP_REST_Request $request ) {
     $batch_id = wp_generate_uuid4();
     $queued   = simple_a11y_scanner_enqueue_bulk( $urls, $batch_id );
 
+    /**
+     * Fires after a bulk scan batch has been enqueued via REST.
+     *
+     * @param string   $batch_id  The batch identifier.
+     * @param string[] $urls      URLs queued for scanning.
+     * @param int      $queued    Number of jobs enqueued.
+     */
+    do_action( 'simple_a11y_scanner_bulk_scan_queued', $batch_id, $urls, $queued );
+
     return new \WP_REST_Response( [
         'batch_id' => $batch_id,
         'queued'   => $queued,
@@ -248,6 +294,18 @@ function simple_a11y_scanner_rest_bulk_results( \WP_REST_Request $request ) {
 
     $batches  = get_option( 'simple_a11y_scanner_batches', [] );
     $meta     = $batches[ $batch_id ] ?? [];
+
+    $all_done = count( $results ) >= ( $meta['total'] ?? PHP_INT_MAX );
+    if ( $all_done ) {
+        /**
+         * Fires when all URLs in a bulk scan batch have been processed.
+         *
+         * @param string   $batch_id  Batch identifier.
+         * @param array[]  $results   All results keyed by URL.
+         * @param array    $meta      Batch metadata (total, scheduled, status).
+         */
+        do_action( 'simple_a11y_scanner_bulk_scan_complete', $batch_id, $results, $meta );
+    }
 
     return new \WP_REST_Response( [
         'batch_id'   => $batch_id,

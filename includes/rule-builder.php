@@ -48,7 +48,7 @@ function simple_a11y_scanner_handle_rule_action(): void {
         if ( $id && $pattern ) {
             // Remove existing rule with same ID.
             $rules = array_filter( $rules, fn( $r ) => $r['id'] !== $id );
-            $rules[] = [
+            $new_rule = [
                 'id'       => $id,
                 'label'    => $label,
                 'pattern'  => $pattern,
@@ -56,13 +56,42 @@ function simple_a11y_scanner_handle_rule_action(): void {
                 'severity' => in_array( $sev, [ 'critical', 'major', 'minor' ], true ) ? $sev : 'minor',
                 'enabled'  => true,
             ];
+
+            /**
+             * Filter a new custom rule before it is saved via the admin UI.
+             * Use to validate, normalise, or enrich the rule data.
+             *
+             * @param array $new_rule  Rule data about to be stored.
+             * @param array $rules     Existing rules (excluding any with the same ID).
+             */
+            $new_rule = apply_filters( 'simple_a11y_scanner_before_save_rule', $new_rule, $rules );
+
+            $rules[] = $new_rule;
         }
     } elseif ( 'delete' === $action ) {
         $del_id = sanitize_key( wp_unslash( $_POST['rule_delete_id'] ?? '' ) );
+
+        /**
+         * Fires before a custom rule is deleted via the admin UI.
+         *
+         * @param string  $del_id  ID of the rule being deleted.
+         * @param array[] $rules   Current rules list.
+         */
+        do_action( 'simple_a11y_scanner_before_delete_rule', $del_id, $rules );
+
         $rules  = array_filter( $rules, fn( $r ) => $r['id'] !== $del_id );
     }
 
     update_option( 'simple_a11y_scanner_custom_rules', array_values( $rules ) );
+
+    /**
+     * Fires after custom rules are updated (add or delete) via the admin UI.
+     *
+     * @param array[] $rules   Updated rules list.
+     * @param string  $action  Action taken: 'add' or 'delete'.
+     */
+    do_action( 'simple_a11y_scanner_rules_updated', array_values( $rules ), $action );
+
     wp_safe_redirect( add_query_arg( 'updated', '1', admin_url( 'admin.php?page=simple-a11y-scanner-rules' ) ) );
     exit;
 }

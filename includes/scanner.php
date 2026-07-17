@@ -66,6 +66,15 @@ class Scanner {
             return $issues;
         }
 
+        /**
+         * Filter the minimum contrast ratio threshold for inline style checks.
+         * Default is 4.5 (WCAG AA). Override to 3.0 for large text, etc.
+         *
+         * @param float  $threshold Minimum acceptable contrast ratio.
+         * @param string $content   HTML being scanned.
+         */
+        $min_contrast = apply_filters( 'simple_a11y_scanner_min_contrast_ratio', 4.5, $content );
+
         foreach ( $matches as $m ) {
             $tag   = $m[0];
             $style = $m[1];
@@ -93,7 +102,7 @@ class Scanner {
 
             $ratio = $this->contrastRatio( $lum_fg, $lum_bg );
 
-            if ( $ratio < 4.5 ) {
+            if ( $ratio < $min_contrast ) {
                 $issues[] = [
                     'type'    => 'low_contrast',
                     'message' => sprintf(
@@ -144,6 +153,15 @@ class Scanner {
             return $issues;
         }
 
+        /**
+         * Filter the minimum target size in pixels (WCAG 2.2 SC 2.5.8).
+         * Default is 24px. Override to enforce stricter requirements.
+         *
+         * @param int    $min_size Minimum size in CSS pixels.
+         * @param string $content  HTML being scanned.
+         */
+        $min_size = apply_filters( 'simple_a11y_scanner_min_target_size', self::TARGET_SIZE_MIN, $content );
+
         foreach ( $matches as $m ) {
             $tag   = $m[0];
             $style = $m[3];
@@ -161,7 +179,7 @@ class Scanner {
             // If both dimensions are explicit, check the smaller axis.
             if ( null !== $width && null !== $height ) {
                 $min_dim = min( $width, $height );
-                if ( $min_dim < self::TARGET_SIZE_MIN ) {
+                if ( $min_dim < $min_size ) {
                     $issues[] = [
                         'type'    => 'target_size',
                         'message' => sprintf(
@@ -178,7 +196,7 @@ class Scanner {
 
             // Single-axis check: if only one dimension set and it's too small.
             foreach ( [ $width, $height ] as $dim ) {
-                if ( null !== $dim && $dim < self::TARGET_SIZE_MIN ) {
+                if ( null !== $dim && $dim < $min_size ) {
                     $issues[] = [
                         'type'    => 'target_size',
                         'message' => sprintf(
@@ -344,15 +362,54 @@ class Scanner {
         $check_target_size = isset( $opts['check_target_size'] )     ? (bool) $opts['check_target_size']     : true;
         $check_keyboard    = isset( $opts['check_keyboard_nav'] )    ? (bool) $opts['check_keyboard_nav']    : true;
 
+        /**
+         * Filter the list of vague link phrases that trigger a 'vague_link' issue.
+         * Add or remove phrases to customise what is considered vague.
+         *
+         * @param string[] $phrases  List of lowercase phrases.
+         * @param array    $opts     Plugin options in effect for this scan.
+         */
+        $vague_phrases = apply_filters( 'simple_a11y_scanner_vague_phrases', self::VAGUE_PHRASES, $opts );
+
+        /**
+         * Filter ignored CSS selectors (future use).
+         * Allows third-party code to register selectors whose elements should
+         * be excluded from all checks. This hook is intentionally fired early
+         * so the list is available to all sub-checks.
+         *
+         * @param string[] $selectors  CSS selectors to ignore (empty by default).
+         * @param string   $content    HTML being scanned.
+         */
+        $ignored_selectors = apply_filters( 'simple_a11y_scanner_ignored_selectors', [], $content );
+
+        /**
+         * Fires before content scanning begins.
+         * Use to instrument, log, or short-circuit via output buffering.
+         *
+         * @param string $content HTML about to be scanned.
+         * @param array  $opts    Active plugin options.
+         */
+        do_action( 'simple_a11y_scanner_before_scan_content', $content, $opts );
+
         // a) Images missing alt attribute.
         if ( $check_alt && preg_match_all( '/<img\b[^>]*>/i', $content, $img_matches ) ) {
             foreach ( $img_matches[0] as $img_tag ) {
                 if ( ! preg_match( '/\balt\s*=/i', $img_tag ) ) {
-                    $issues[] = [
+                    $issue = [
                         'type'    => 'missing_alt',
                         'message' => 'Image missing alt attribute.',
                         'element' => $img_tag,
                     ];
+
+                    /**
+                     * Fires when a missing-alt issue is detected on an image tag.
+                     *
+                     * @param array  $issue   Issue data array.
+                     * @param string $content Full HTML being scanned.
+                     */
+                    do_action( 'simple_a11y_scanner_issue_found', $issue, $content );
+
+                    $issues[] = $issue;
                 }
             }
         }
@@ -366,17 +423,37 @@ class Scanner {
                 $link_text = trim( strip_tags( $match[1] ) );
 
                 if ( $check_empty && $link_text === '' ) {
-                    $issues[] = [
+                    $issue = [
                         'type'    => 'empty_link',
                         'message' => 'Link has empty text.',
                         'element' => $link_tag,
                     ];
-                } elseif ( $check_vague && in_array( strtolower( $link_text ), self::VAGUE_PHRASES, true ) ) {
-                    $issues[] = [
+
+                    /**
+                     * Fires when an empty-link issue is detected.
+                     *
+                     * @param array  $issue   Issue data array.
+                     * @param string $content Full HTML being scanned.
+                     */
+                    do_action( 'simple_a11y_scanner_issue_found', $issue, $content );
+
+                    $issues[] = $issue;
+                } elseif ( $check_vague && in_array( strtolower( $link_text ), $vague_phrases, true ) ) {
+                    $issue = [
                         'type'    => 'vague_link',
                         'message' => sprintf( 'Link text "%s" is vague and not descriptive.', $link_text ),
                         'element' => $link_tag,
                     ];
+
+                    /**
+                     * Fires when a vague-link issue is detected.
+                     *
+                     * @param array  $issue   Issue data array.
+                     * @param string $content Full HTML being scanned.
+                     */
+                    do_action( 'simple_a11y_scanner_issue_found', $issue, $content );
+
+                    $issues[] = $issue;
                 }
             }
         }
@@ -396,6 +473,25 @@ class Scanner {
             $tab_result = $this->analyseTabOrder( $content );
             $issues     = array_merge( $issues, $tab_result['issues'] );
         }
+
+        /**
+         * Filter the complete list of issues found during a content scan.
+         * Use to add custom issues, remove false positives, or reorder results.
+         *
+         * @param array[] $issues  All issues found.
+         * @param string  $content HTML that was scanned.
+         * @param array   $opts    Plugin options used for this scan.
+         */
+        $issues = apply_filters( 'simple_a11y_scanner_scan_issues', $issues, $content, $opts );
+
+        /**
+         * Fires after content scanning completes.
+         *
+         * @param array[] $issues  Issues found.
+         * @param string  $content HTML that was scanned.
+         * @param array   $opts    Plugin options used for this scan.
+         */
+        do_action( 'simple_a11y_scanner_after_scan_content', $issues, $content, $opts );
 
         return $issues;
     }

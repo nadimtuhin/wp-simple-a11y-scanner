@@ -1,4 +1,10 @@
-# WP Simple A11y Scanner
+```
+ _      ______   _____ 
+| | /| / / __ \ / ___/ 
+| |/ |/ / /_/ / \__ \  
+|__/|__/\____/ /____/  
+  Simple A11y Scanner
+```
 
 A clean, testable WordPress plugin that scans post content for accessibility issues.
 

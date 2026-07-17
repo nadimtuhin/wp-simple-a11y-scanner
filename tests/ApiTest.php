@@ -19,10 +19,12 @@ if ( ! function_exists( 'current_user_can' ) ) {
 if ( ! class_exists( 'WP_REST_Request' ) ) {
     class WP_REST_Request {
         public array $params = [];
+        private array $json  = [];
         public function __construct( string $method = '', string $route = '' ) {}
-        public function get_param( string $key ) {
-            return $this->params[ $key ] ?? null;
-        }
+        public function get_param( string $key ) { return $this->params[ $key ] ?? null; }
+        public function get_json_params(): array { return $this->json; }
+        public function set_body( string $data ) { $this->json = json_decode( $data, true ) ?? []; }
+        public function set_json( array $data ): void { $this->json = $data; }
     }
 }
 

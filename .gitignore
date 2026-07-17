@@ -1,0 +1,31 @@
+# Dependencies
+/vendor/
+node_modules/
+
+# Composer
+composer.phar
+
+# WordPress
+wp-config.php
+wp-content/uploads/
+
+# PHPUnit
+.phpunit.result.cache
+.phpunit.cache/
+coverage/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Build artifacts
+*.zip
+dist/
+build/
+
+# Environment
+.env
+.env.local

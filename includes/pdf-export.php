@@ -6,7 +6,7 @@
  * @package SimpleA11yScanner
  */
 
-if ( ! defined( 'ABSPATH' ) ) {
+if ( ! defined( 'ABSPATH' ) && ! defined( 'PHPUNIT_RUNNING' ) ) {
     exit;
 }
 

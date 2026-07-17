@@ -33,7 +33,9 @@ if ( ! function_exists( 'wp_unslash' ) ) {
     function wp_unslash( $s ) { return $s; }
 }
 if ( ! function_exists( 'get_transient' ) ) {
-    function get_transient( $key ) { return false; }
+    function get_transient( $key ) {
+        return $GLOBALS['_test_transients'][ $key ] ?? false;
+    }
 }
 if ( ! function_exists( 'sprintf' ) ) {
     // built-in — no stub needed

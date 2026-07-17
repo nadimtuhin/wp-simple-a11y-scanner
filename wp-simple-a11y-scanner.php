@@ -18,6 +18,14 @@ require_once __DIR__ . '/includes/notifications.php';
 require_once __DIR__ . '/includes/pdf-export.php';
 require_once __DIR__ . '/includes/sitemap.php';
 require_once __DIR__ . '/includes/bulk-scan.php';
+require_once __DIR__ . '/includes/severity.php';
+require_once __DIR__ . '/includes/rate-limit.php';
+require_once __DIR__ . '/includes/scheduled-audit.php';
+require_once __DIR__ . '/includes/audit-log.php';
+require_once __DIR__ . '/includes/post-publish-hook.php';
+require_once __DIR__ . '/includes/frontend-badge.php';
+require_once __DIR__ . '/includes/category-schedule.php';
+require_once __DIR__ . '/includes/rule-builder.php';
 
 // WP-CLI commands — only load in CLI context.
 if ( defined( 'WP_CLI' ) && WP_CLI ) {

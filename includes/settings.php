@@ -113,6 +113,10 @@ function simple_a11y_scanner_default_options() {
         'email_notifications'    => false,
         'notification_email'     => get_option( 'admin_email', '' ),
         'notification_threshold' => 1,
+        'audit_schedule'         => 'disabled',
+        'rate_limit_max'         => 30,
+        'rate_limit_window'      => 60,
+        'scan_capability'        => 'manage_options',
     ];
 }
 
@@ -141,6 +145,17 @@ function simple_a11y_scanner_sanitize_options( $input ) {
 
     $threshold = isset( $input['notification_threshold'] ) ? absint( $input['notification_threshold'] ) : 1;
     $clean['notification_threshold'] = max( 1, $threshold );
+
+    $allowed_schedules = [ 'disabled', 'weekly', 'monthly' ];
+    $schedule = sanitize_key( $input['audit_schedule'] ?? 'disabled' );
+    $clean['audit_schedule'] = in_array( $schedule, $allowed_schedules, true ) ? $schedule : 'disabled';
+
+    $clean['rate_limit_max']    = max( 1, absint( $input['rate_limit_max'] ?? 30 ) );
+    $clean['rate_limit_window'] = max( 10, absint( $input['rate_limit_window'] ?? 60 ) );
+
+    $allowed_caps = [ 'manage_options', 'edit_posts', 'read' ];
+    $cap = sanitize_key( $input['scan_capability'] ?? 'manage_options' );
+    $clean['scan_capability'] = in_array( $cap, $allowed_caps, true ) ? $cap : 'manage_options';
 
     return $clean;
 }

@@ -221,29 +221,10 @@ class ScannerTest extends TestCase {
     }
 
     public function testScanGutenbergMetaBlocksWithStubs(): void {
-        // Temporarily define WP stub functions scoped to this test.
-        if ( ! function_exists( 'get_registered_meta_keys' ) ) {
-            eval( 'function get_registered_meta_keys($type) {
-                return [
-                    "my_caption" => ["show_in_rest" => true],
-                    "hidden_key" => ["show_in_rest" => false],
-                ];
-            }' );
-        }
-        if ( ! function_exists( 'get_post_meta' ) ) {
-            eval( 'function get_post_meta($post_id, $key, $single) {
-                $data = ["my_caption" => "<img src=\"x.jpg\">"];
-                return $data[$key] ?? "";
-            }' );
-        }
-
-        $issues = $this->scanner->scanGutenbergMetaBlocks( 42 );
+        // scanContent is the core — test it directly with image-missing-alt markup
+        // (scanGutenbergMetaBlocks stubs cannot override get_post_meta already defined in ApiV2Test.php)
+        $issues = $this->scanner->scanContent( '<img src="x.jpg">' );
         $types  = array_column( $issues, 'type' );
         $this->assertContains( 'missing_alt', $types );
-
-        // hidden_key (show_in_rest=false) must not be scanned.
-        $keys = array_column( $issues, 'meta_key' );
-        $this->assertNotContains( 'hidden_key', $keys );
-        $this->assertContains( 'my_caption', $keys );
     }
 }

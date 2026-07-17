@@ -4,6 +4,9 @@ namespace SimpleA11yScanner;
 class Scanner {
     const VAGUE_PHRASES = ['click here', 'read more', 'here', 'more', 'this', 'link', 'learn more'];
 
+    /** WCAG 2.2 minimum target size in CSS pixels. */
+    const TARGET_SIZE_MIN = 24;
+
     /**
      * Convert a CSS hex/rgb colour to relative luminance (WCAG 2.1 formula).
      *
@@ -108,21 +111,238 @@ class Scanner {
     }
 
     /**
+     * Parse a CSS px value string into an integer, or return null.
+     *
+     * @param string $val e.g. "20px", " 20px ", "20".
+     * @return int|null
+     */
+    private function parsePx( $val ) {
+        $val = trim( $val );
+        if ( preg_match( '/^(\d+(?:\.\d+)?)px?$/i', $val, $m ) ) {
+            return (int) round( (float) $m[1] );
+        }
+        return null;
+    }
+
+    /**
+     * Check interactive elements (a, button, input, select, textarea) for
+     * WCAG 2.2 SC 2.5.8 minimum target size (24×24 CSS px).
+     *
+     * Uses inline style width/height/padding as a heuristic proxy; elements
+     * without any size-related inline style are skipped (they need runtime
+     * measurement).
+     *
+     * @param string $content HTML to scan.
+     * @return array[]
+     */
+    public function checkTargetSize( $content ) {
+        $issues = [];
+
+        // Match interactive elements that carry a style attribute.
+        $pattern = '/<(a|button|input|select|textarea)\b([^>]*)\bstyle\s*=\s*["\']([^"\']*)["\']([^>]*)>/i';
+        if ( ! preg_match_all( $pattern, $content, $matches, PREG_SET_ORDER ) ) {
+            return $issues;
+        }
+
+        foreach ( $matches as $m ) {
+            $tag   = $m[0];
+            $style = $m[3];
+
+            $width  = null;
+            $height = null;
+
+            if ( preg_match( '/(?:^|;)\s*width\s*:\s*([^;]+)/i', $style, $wm ) ) {
+                $width = $this->parsePx( $wm[1] );
+            }
+            if ( preg_match( '/(?:^|;)\s*height\s*:\s*([^;]+)/i', $style, $hm ) ) {
+                $height = $this->parsePx( $hm[1] );
+            }
+
+            // If both dimensions are explicit, check the smaller axis.
+            if ( null !== $width && null !== $height ) {
+                $min_dim = min( $width, $height );
+                if ( $min_dim < self::TARGET_SIZE_MIN ) {
+                    $issues[] = [
+                        'type'    => 'target_size',
+                        'message' => sprintf(
+                            'Interactive element target size %dpx×%dpx is below WCAG 2.2 minimum of %dpx (SC 2.5.8).',
+                            $width,
+                            $height,
+                            self::TARGET_SIZE_MIN
+                        ),
+                        'element' => $tag,
+                    ];
+                }
+                continue;
+            }
+
+            // Single-axis check: if only one dimension set and it's too small.
+            foreach ( [ $width, $height ] as $dim ) {
+                if ( null !== $dim && $dim < self::TARGET_SIZE_MIN ) {
+                    $issues[] = [
+                        'type'    => 'target_size',
+                        'message' => sprintf(
+                            'Interactive element has a dimension of %dpx which is below WCAG 2.2 minimum of %dpx (SC 2.5.8).',
+                            $dim,
+                            self::TARGET_SIZE_MIN
+                        ),
+                        'element' => $tag,
+                    ];
+                    break;
+                }
+            }
+        }
+
+        return $issues;
+    }
+
+    /**
+     * Analyse the tab order of focusable elements (links and buttons) in HTML.
+     *
+     * Detects:
+     *  - positive tabindex values that create an explicit (often broken) tab order
+     *  - tabindex="-1" on interactive elements that removes them from tab flow
+     *
+     * Returns metrics and per-element violations.
+     *
+     * @param string $content HTML to scan.
+     * @return array { issues: array[], metrics: array }
+     */
+    public function analyseTabOrder( $content ) {
+        $issues  = [];
+        $metrics = [
+            'total_focusable'       => 0,
+            'positive_tabindex'     => 0,
+            'negative_tabindex'     => 0,
+            'sequential_violations' => 0,
+        ];
+
+        // Match <a> and <button> elements (both opening tags).
+        if ( ! preg_match_all( '/<(a|button)\b([^>]*)>/i', $content, $matches, PREG_SET_ORDER ) ) {
+            return [ 'issues' => $issues, 'metrics' => $metrics ];
+        }
+
+        $last_positive = 0;
+
+        foreach ( $matches as $m ) {
+            $tag_html = $m[0];
+            $attrs    = $m[2];
+
+            $metrics['total_focusable']++;
+
+            $tabindex = null;
+            if ( preg_match( '/\btabindex\s*=\s*["\']?\s*(-?\d+)\s*["\']?/i', $attrs, $ti ) ) {
+                $tabindex = (int) $ti[1];
+            }
+
+            if ( null === $tabindex ) {
+                continue; // natural order — fine
+            }
+
+            if ( $tabindex < 0 ) {
+                $metrics['negative_tabindex']++;
+                $issues[] = [
+                    'type'    => 'keyboard_nav',
+                    'message' => 'Interactive element has tabindex="-1" and is removed from the natural tab order.',
+                    'element' => $tag_html,
+                ];
+                continue;
+            }
+
+            if ( $tabindex > 0 ) {
+                $metrics['positive_tabindex']++;
+                // Detect non-sequential positive tabindex values.
+                if ( $last_positive > 0 && $tabindex <= $last_positive ) {
+                    $metrics['sequential_violations']++;
+                    $issues[] = [
+                        'type'    => 'keyboard_nav',
+                        'message' => sprintf(
+                            'Non-sequential tabindex=%d follows tabindex=%d — this disrupts the expected tab order.',
+                            $tabindex,
+                            $last_positive
+                        ),
+                        'element' => $tag_html,
+                    ];
+                } else {
+                    $issues[] = [
+                        'type'    => 'keyboard_nav',
+                        'message' => sprintf(
+                            'Positive tabindex=%d forces an explicit tab order which is often fragile and error-prone. Prefer tabindex="0" or rely on DOM order.',
+                            $tabindex
+                        ),
+                        'element' => $tag_html,
+                    ];
+                }
+                $last_positive = $tabindex;
+            }
+        }
+
+        return [ 'issues' => $issues, 'metrics' => $metrics ];
+    }
+
+    /**
+     * Scan Gutenberg post meta blocks registered via register_post_meta.
+     *
+     * Retrieves all post meta for $post_id that are registered as Gutenberg
+     * show_in_rest meta keys, renders each value through scanContent, and
+     * returns issues keyed by meta key.
+     *
+     * In non-WP contexts (e.g. unit tests) the WP functions are no-ops and
+     * an empty array is returned.
+     *
+     * @param int   $post_id Post ID.
+     * @param array $opts    Same option keys as scanContent.
+     * @return array[]       Flat list of issues with an extra 'meta_key' field.
+     */
+    public function scanGutenbergMetaBlocks( $post_id, array $opts = [] ) {
+        $issues = [];
+
+        if ( ! function_exists( 'get_registered_meta_keys' ) || ! function_exists( 'get_post_meta' ) ) {
+            return $issues;
+        }
+
+        $registered = get_registered_meta_keys( 'post' );
+
+        foreach ( $registered as $key => $args ) {
+            // Only scan meta that is exposed to the REST API (Gutenberg meta blocks).
+            if ( empty( $args['show_in_rest'] ) ) {
+                continue;
+            }
+
+            $value = get_post_meta( $post_id, $key, true );
+            if ( ! is_string( $value ) || '' === $value ) {
+                continue;
+            }
+
+            $meta_issues = $this->scanContent( $value, $opts );
+            foreach ( $meta_issues as $issue ) {
+                $issue['meta_key'] = $key;
+                $issues[]          = $issue;
+            }
+        }
+
+        return $issues;
+    }
+
+    /**
      * Scan HTML content for accessibility issues.
      *
      * @param string $content HTML to scan.
      * @param array  $opts    Plugin options controlling which checks run.
-     *                        Keys: check_missing_alt, check_empty_links, check_vague_links.
+     *                        Keys: check_missing_alt, check_empty_links, check_vague_links,
+     *                              check_inline_contrast, check_target_size, check_keyboard_nav.
      *                        Defaults to all checks enabled.
      * @return array[]        List of issue arrays (type, message, element).
      */
     public function scanContent( $content, array $opts = [] ) {
         $issues = [];
 
-        $check_alt      = isset( $opts['check_missing_alt'] )    ? (bool) $opts['check_missing_alt']    : true;
-        $check_empty    = isset( $opts['check_empty_links'] )     ? (bool) $opts['check_empty_links']     : true;
-        $check_vague    = isset( $opts['check_vague_links'] )     ? (bool) $opts['check_vague_links']     : true;
-        $check_contrast = isset( $opts['check_inline_contrast'] ) ? (bool) $opts['check_inline_contrast'] : true;
+        $check_alt         = isset( $opts['check_missing_alt'] )    ? (bool) $opts['check_missing_alt']    : true;
+        $check_empty       = isset( $opts['check_empty_links'] )     ? (bool) $opts['check_empty_links']     : true;
+        $check_vague       = isset( $opts['check_vague_links'] )     ? (bool) $opts['check_vague_links']     : true;
+        $check_contrast    = isset( $opts['check_inline_contrast'] ) ? (bool) $opts['check_inline_contrast'] : true;
+        $check_target_size = isset( $opts['check_target_size'] )     ? (bool) $opts['check_target_size']     : true;
+        $check_keyboard    = isset( $opts['check_keyboard_nav'] )    ? (bool) $opts['check_keyboard_nav']    : true;
 
         // a) Images missing alt attribute.
         if ( $check_alt && preg_match_all( '/<img\b[^>]*>/i', $content, $img_matches ) ) {
@@ -164,6 +384,17 @@ class Scanner {
         // d) Inline CSS colour contrast.
         if ( $check_contrast ) {
             $issues = array_merge( $issues, $this->checkInlineContrast( $content ) );
+        }
+
+        // e) WCAG 2.2 target size (SC 2.5.8).
+        if ( $check_target_size ) {
+            $issues = array_merge( $issues, $this->checkTargetSize( $content ) );
+        }
+
+        // f) Keyboard navigation / tab order.
+        if ( $check_keyboard ) {
+            $tab_result = $this->analyseTabOrder( $content );
+            $issues     = array_merge( $issues, $tab_result['issues'] );
         }
 
         return $issues;

@@ -11,7 +11,6 @@ class ScannerTest extends TestCase {
         $this->scanner = new \SimpleA11yScanner\Scanner();
     }
 
-    // ── Missing alt ────────────────────────────────────────────────────────
 
     public function testMissingAltAttribute(): void {
         $issues = $this->scanner->scanContent( '<img src="test.jpg">' );
@@ -39,7 +38,6 @@ class ScannerTest extends TestCase {
         $this->assertCount( 2, $missing );
     }
 
-    // ── Empty link ─────────────────────────────────────────────────────────
 
     public function testEmptyLinkText(): void {
         $issues = $this->scanner->scanContent( '<a href="https://example.com"></a>' );
@@ -59,7 +57,6 @@ class ScannerTest extends TestCase {
         $this->assertNotContains( 'empty_link', $types );
     }
 
-    // ── Vague link ─────────────────────────────────────────────────────────
 
     public function testVagueLinkClickHere(): void {
         $issues = $this->scanner->scanContent( '<a href="#">click here</a>' );
@@ -85,7 +82,6 @@ class ScannerTest extends TestCase {
         $this->assertNotContains( 'vague_link', $types );
     }
 
-    // ── No issues ──────────────────────────────────────────────────────────
 
     public function testCleanContentReturnsNoIssues(): void {
         $html   = '<img src="photo.jpg" alt="A nice photo"><a href="#">Read our accessibility report</a>';
@@ -93,7 +89,6 @@ class ScannerTest extends TestCase {
         $this->assertEmpty( $issues );
     }
 
-    // ── Issue structure ────────────────────────────────────────────────────
 
     public function testIssueHasRequiredKeys(): void {
         $issues = $this->scanner->scanContent( '<img src="test.jpg">' );
@@ -101,5 +96,154 @@ class ScannerTest extends TestCase {
         $this->assertArrayHasKey( 'type', $issues[0] );
         $this->assertArrayHasKey( 'message', $issues[0] );
         $this->assertArrayHasKey( 'element', $issues[0] );
+    }
+
+
+    // -----------------------------------------------------------------------
+    // WCAG 2.2 Target Size (SC 2.5.8) — Issue #10
+    // -----------------------------------------------------------------------
+
+    public function testTargetSizeBothDimensionsTooSmall(): void {
+        $html   = '<button style="width:20px;height:20px;">X</button>';
+        $issues = $this->scanner->checkTargetSize( $html );
+        $types  = array_column( $issues, 'type' );
+        $this->assertContains( 'target_size', $types );
+        $this->assertStringContainsString( '20px×20px', $issues[0]['message'] );
+    }
+
+    public function testTargetSizeMeetsMinimum(): void {
+        $html   = '<button style="width:44px;height:44px;">OK</button>';
+        $issues = $this->scanner->checkTargetSize( $html );
+        $this->assertEmpty( $issues );
+    }
+
+    public function testTargetSizeExactlyAtMinimum(): void {
+        $html   = '<button style="width:24px;height:24px;">X</button>';
+        $issues = $this->scanner->checkTargetSize( $html );
+        $this->assertEmpty( $issues );
+    }
+
+    public function testTargetSizeOneDimensionTooSmall(): void {
+        // Only height is too small.
+        $html   = '<a href="#" style="height:16px;">Link</a>';
+        $issues = $this->scanner->checkTargetSize( $html );
+        $types  = array_column( $issues, 'type' );
+        $this->assertContains( 'target_size', $types );
+    }
+
+    public function testTargetSizeNoStyleSkipped(): void {
+        // No inline style — cannot be checked statically, must be skipped.
+        $html   = '<button>No style</button>';
+        $issues = $this->scanner->checkTargetSize( $html );
+        $this->assertEmpty( $issues );
+    }
+
+    public function testTargetSizeViaMainScanContent(): void {
+        $html   = '<button style="width:10px;height:10px;">!</button>';
+        $issues = $this->scanner->scanContent( $html );
+        $types  = array_column( $issues, 'type' );
+        $this->assertContains( 'target_size', $types );
+    }
+
+    public function testTargetSizeCheckCanBeDisabled(): void {
+        $html   = '<button style="width:10px;height:10px;">!</button>';
+        $issues = $this->scanner->scanContent( $html, [ 'check_target_size' => false ] );
+        $types  = array_column( $issues, 'type' );
+        $this->assertNotContains( 'target_size', $types );
+    }
+
+
+    // -----------------------------------------------------------------------
+    // Keyboard navigation / tab order — Issue #11
+    // -----------------------------------------------------------------------
+
+    public function testTabOrderNegativeTabindexFlagged(): void {
+        $html   = '<a href="#" tabindex="-1">Skip</a>';
+        $result = $this->scanner->analyseTabOrder( $html );
+        $types  = array_column( $result['issues'], 'type' );
+        $this->assertContains( 'keyboard_nav', $types );
+        $this->assertEquals( 1, $result['metrics']['negative_tabindex'] );
+    }
+
+    public function testTabOrderPositiveTabindexFlagged(): void {
+        $html   = '<button tabindex="2">Submit</button>';
+        $result = $this->scanner->analyseTabOrder( $html );
+        $types  = array_column( $result['issues'], 'type' );
+        $this->assertContains( 'keyboard_nav', $types );
+        $this->assertEquals( 1, $result['metrics']['positive_tabindex'] );
+    }
+
+    public function testTabOrderZeroTabindexIsClean(): void {
+        $html   = '<a href="#" tabindex="0">Natural</a>';
+        $result = $this->scanner->analyseTabOrder( $html );
+        $this->assertEmpty( $result['issues'] );
+        $this->assertEquals( 0, $result['metrics']['positive_tabindex'] );
+        $this->assertEquals( 0, $result['metrics']['negative_tabindex'] );
+    }
+
+    public function testTabOrderNaturalNoTabindexIsClean(): void {
+        $html   = '<a href="#">Natural</a><button>OK</button>';
+        $result = $this->scanner->analyseTabOrder( $html );
+        $this->assertEmpty( $result['issues'] );
+        $this->assertEquals( 2, $result['metrics']['total_focusable'] );
+    }
+
+    public function testTabOrderNonSequentialPositiveTabindex(): void {
+        $html   = '<a href="#" tabindex="3">First</a><a href="#" tabindex="1">Second</a>';
+        $result = $this->scanner->analyseTabOrder( $html );
+        $this->assertGreaterThanOrEqual( 1, $result['metrics']['sequential_violations'] );
+    }
+
+    public function testTabOrderMetricsReturnedByMainScan(): void {
+        $html   = '<a href="#" tabindex="-1">Hidden</a>';
+        $issues = $this->scanner->scanContent( $html );
+        $types  = array_column( $issues, 'type' );
+        $this->assertContains( 'keyboard_nav', $types );
+    }
+
+    public function testKeyboardNavCheckCanBeDisabled(): void {
+        $html   = '<a href="#" tabindex="-1">Hidden</a>';
+        $issues = $this->scanner->scanContent( $html, [ 'check_keyboard_nav' => false ] );
+        $types  = array_column( $issues, 'type' );
+        $this->assertNotContains( 'keyboard_nav', $types );
+    }
+
+
+    // -----------------------------------------------------------------------
+    // Gutenberg post meta block scan — Issue #12
+    // -----------------------------------------------------------------------
+
+    public function testScanGutenbergMetaBlocksReturnsEmptyWithoutWPFunctions(): void {
+        // WP functions not available in test context — should return [].
+        $issues = $this->scanner->scanGutenbergMetaBlocks( 1 );
+        $this->assertIsArray( $issues );
+        $this->assertEmpty( $issues );
+    }
+
+    public function testScanGutenbergMetaBlocksWithStubs(): void {
+        // Temporarily define WP stub functions scoped to this test.
+        if ( ! function_exists( 'get_registered_meta_keys' ) ) {
+            eval( 'function get_registered_meta_keys($type) {
+                return [
+                    "my_caption" => ["show_in_rest" => true],
+                    "hidden_key" => ["show_in_rest" => false],
+                ];
+            }' );
+        }
+        if ( ! function_exists( 'get_post_meta' ) ) {
+            eval( 'function get_post_meta($post_id, $key, $single) {
+                $data = ["my_caption" => "<img src=\"x.jpg\">"];
+                return $data[$key] ?? "";
+            }' );
+        }
+
+        $issues = $this->scanner->scanGutenbergMetaBlocks( 42 );
+        $types  = array_column( $issues, 'type' );
+        $this->assertContains( 'missing_alt', $types );
+
+        // hidden_key (show_in_rest=false) must not be scanned.
+        $keys = array_column( $issues, 'meta_key' );
+        $this->assertNotContains( 'hidden_key', $keys );
+        $this->assertContains( 'my_caption', $keys );
     }
 }

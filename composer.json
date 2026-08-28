@@ -1,6 +1,6 @@
 {
     "name": "nadimtuhin/wp-simple-a11y-scanner",
-    "description": "Simple WordPress A11y Scanner",
+    "description": "Scan WordPress sites for WCAG accessibility issues",
     "type": "wordpress-plugin",
     "require": {
         "php": ">=7.4",
@@ -13,5 +13,6 @@
         "psr-4": {
             "SimpleA11yScanner\\": "includes/"
         }
-    }
+    },
+    "license": "MIT"
 }

@@ -13,7 +13,21 @@ if ( ! function_exists( 'simple_a11y_scanner_get_options' ) ) {
 }
 
 if ( ! function_exists( 'current_user_can' ) ) {
-    function current_user_can( $cap ) { return true; }
+    // Grants every capability unless a test denies it via $GLOBALS['sas_test_denied_caps'].
+    function current_user_can( $cap, ...$args ) {
+        return ! in_array( $cap, $GLOBALS['sas_test_denied_caps'] ?? [], true );
+    }
+}
+
+if ( ! function_exists( 'absint' ) ) {
+    function absint( $v ) { return abs( (int) $v ); }
+}
+
+if ( ! function_exists( 'register_rest_route' ) ) {
+    function register_rest_route( $namespace, $route, $args = [] ) {
+        $GLOBALS['sas_test_routes'][ $namespace . $route ] = $args;
+        return true;
+    }
 }
 
 if ( ! class_exists( 'WP_REST_Request' ) ) {
@@ -169,5 +183,46 @@ class ApiTest extends TestCase {
         $this->assertArrayHasKey( 'issues', $response->data );
         $this->assertArrayHasKey( 'count', $response->data );
         $this->assertEquals( 1, $response->data['post_id'] );
+    }
+
+    // Per-post endpoints must check edit_post for the requested post, not just edit_posts.
+    private function routePermission( string $route, int $post_id ) {
+        $GLOBALS['sas_test_routes'] = [];
+        $this->api->registerRoutes();
+        $request                    = new WP_REST_Request();
+        $request->params['post_id'] = $post_id;
+        return call_user_func( $GLOBALS['sas_test_routes'][ $route ]['permission_callback'], $request );
+    }
+
+    public function testPostMetaRouteDeniedWithoutEditPostCap(): void {
+        $GLOBALS['sas_test_denied_caps'] = [ 'edit_post' ];
+        try {
+            $this->assertFalse( $this->routePermission( 'simple-a11y/v1/scan/post-meta/(?P<post_id>\d+)', 42 ) );
+        } finally {
+            $GLOBALS['sas_test_denied_caps'] = [];
+        }
+    }
+
+    public function testSocialRouteDeniedWithoutEditPostCap(): void {
+        $GLOBALS['sas_test_denied_caps'] = [ 'edit_post' ];
+        try {
+            $this->assertFalse( $this->routePermission( 'simple-a11y/v2/scan/social/(?P<post_id>\d+)', 42 ) );
+        } finally {
+            $GLOBALS['sas_test_denied_caps'] = [];
+        }
+    }
+
+    public function testPostMetaRouteAllowedWithEditPostCap(): void {
+        $this->assertTrue( $this->routePermission( 'simple-a11y/v1/scan/post-meta/(?P<post_id>\d+)', 42 ) );
+    }
+
+    // per_page=0 previously reached ceil( $total / 0 ), a fatal DivisionByZeroError on PHP 8.
+    public function testAuditLogPerPageIsClampedToAtLeastOne(): void {
+        $GLOBALS['sas_test_routes'] = [];
+        $this->api->registerRoutes();
+        $args = $GLOBALS['sas_test_routes']['simple-a11y/v2/audit-log']['args'];
+        $this->assertSame( 1, call_user_func( $args['per_page']['sanitize_callback'], 0 ) );
+        $this->assertSame( 100, call_user_func( $args['per_page']['sanitize_callback'], 5000 ) );
+        $this->assertSame( 1, call_user_func( $args['page']['sanitize_callback'], 0 ) );
     }
 }

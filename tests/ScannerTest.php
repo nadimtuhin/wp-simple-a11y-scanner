@@ -227,4 +227,78 @@ class ScannerTest extends TestCase {
         $types  = array_column( $issues, 'type' );
         $this->assertContains( 'missing_alt', $types );
     }
+
+    // WCAG 1.1.1: a data-* attribute ending in "alt" is not an alt attribute.
+    public function testDataAltAttributeIsNotTreatedAsAlt(): void {
+        $issues = $this->scanner->scanContent( '<img src="x.jpg" data-alt="Photo">' );
+        $types  = array_column( $issues, 'type' );
+        $this->assertContains( 'missing_alt', $types );
+    }
+
+    public function testUppercaseAltAttributeCounts(): void {
+        $issues = $this->scanner->scanContent( '<img ALT="Photo" src="x.jpg">' );
+        $types  = array_column( $issues, 'type' );
+        $this->assertNotContains( 'missing_alt', $types );
+    }
+
+    // WCAG 2.4.4 / 4.1.2: image alt text supplies a link's accessible name.
+    public function testLinkWithImageAltIsNotEmpty(): void {
+        $issues = $this->scanner->scanContent( '<a href="/"><img src="logo.png" alt="Home"></a>' );
+        $types  = array_column( $issues, 'type' );
+        $this->assertNotContains( 'empty_link', $types );
+    }
+
+    public function testLinkWithAriaLabelIsNotEmpty(): void {
+        $issues = $this->scanner->scanContent( '<a href="/close" aria-label="Close dialog"><svg></svg></a>' );
+        $types  = array_column( $issues, 'type' );
+        $this->assertNotContains( 'empty_link', $types );
+    }
+
+    public function testLinkWithAriaLabelledbyIsNotEmpty(): void {
+        $issues = $this->scanner->scanContent( '<span id="lbl">Read the report</span><a href="/x" aria-labelledby="lbl"><i class="icon"></i></a>' );
+        $types  = array_column( $issues, 'type' );
+        $this->assertNotContains( 'empty_link', $types );
+    }
+
+    public function testLinkWithAriaLabelledbyToMissingIdIsEmpty(): void {
+        $issues = $this->scanner->scanContent( '<a href="/x" aria-labelledby="nope"><i class="icon"></i></a>' );
+        $types  = array_column( $issues, 'type' );
+        $this->assertContains( 'empty_link', $types );
+    }
+
+    public function testLinkWithAriaLabelledbyToEmptyElementIsEmpty(): void {
+        $issues = $this->scanner->scanContent( '<span id="lbl">   </span><a href="/x" aria-labelledby="lbl"><i class="icon"></i></a>' );
+        $types  = array_column( $issues, 'type' );
+        $this->assertContains( 'empty_link', $types );
+    }
+
+    public function testLinkWithAriaLabelledbyCountsIfAnyReferenceHasText(): void {
+        $issues = $this->scanner->scanContent( '<span id="a"></span><span id="b">Settings</span><a href="/x" aria-labelledby="missing a b"><i class="icon"></i></a>' );
+        $types  = array_column( $issues, 'type' );
+        $this->assertNotContains( 'empty_link', $types );
+    }
+
+    public function testLinkWithUnresolvedAriaLabelledbyFallsBackToText(): void {
+        $issues = $this->scanner->scanContent( '<a href="/x" aria-labelledby="nope">Pricing details</a>' );
+        $types  = array_column( $issues, 'type' );
+        $this->assertNotContains( 'empty_link', $types );
+    }
+
+    public function testLinkWithDecorativeImageOnlyIsEmpty(): void {
+        $issues = $this->scanner->scanContent( '<a href="/"><img src="logo.png" alt=""></a>' );
+        $types  = array_column( $issues, 'type' );
+        $this->assertContains( 'empty_link', $types );
+    }
+
+    public function testLinkWithBlankAriaLabelIsEmpty(): void {
+        $issues = $this->scanner->scanContent( '<a href="/" aria-label="  "></a>' );
+        $types  = array_column( $issues, 'type' );
+        $this->assertContains( 'empty_link', $types );
+    }
+
+    public function testVagueImageLinkAltIsFlaggedAsVague(): void {
+        $issues = $this->scanner->scanContent( '<a href="/"><img src="x.png" alt="Read more"></a>' );
+        $types  = array_column( $issues, 'type' );
+        $this->assertContains( 'vague_link', $types );
+    }
 }

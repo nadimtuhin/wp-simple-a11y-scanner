@@ -255,7 +255,31 @@ class ScannerTest extends TestCase {
     }
 
     public function testLinkWithAriaLabelledbyIsNotEmpty(): void {
-        $issues = $this->scanner->scanContent( '<a href="/x" aria-labelledby="lbl"><i class="icon"></i></a>' );
+        $issues = $this->scanner->scanContent( '<span id="lbl">Read the report</span><a href="/x" aria-labelledby="lbl"><i class="icon"></i></a>' );
+        $types  = array_column( $issues, 'type' );
+        $this->assertNotContains( 'empty_link', $types );
+    }
+
+    public function testLinkWithAriaLabelledbyToMissingIdIsEmpty(): void {
+        $issues = $this->scanner->scanContent( '<a href="/x" aria-labelledby="nope"><i class="icon"></i></a>' );
+        $types  = array_column( $issues, 'type' );
+        $this->assertContains( 'empty_link', $types );
+    }
+
+    public function testLinkWithAriaLabelledbyToEmptyElementIsEmpty(): void {
+        $issues = $this->scanner->scanContent( '<span id="lbl">   </span><a href="/x" aria-labelledby="lbl"><i class="icon"></i></a>' );
+        $types  = array_column( $issues, 'type' );
+        $this->assertContains( 'empty_link', $types );
+    }
+
+    public function testLinkWithAriaLabelledbyCountsIfAnyReferenceHasText(): void {
+        $issues = $this->scanner->scanContent( '<span id="a"></span><span id="b">Settings</span><a href="/x" aria-labelledby="missing a b"><i class="icon"></i></a>' );
+        $types  = array_column( $issues, 'type' );
+        $this->assertNotContains( 'empty_link', $types );
+    }
+
+    public function testLinkWithUnresolvedAriaLabelledbyFallsBackToText(): void {
+        $issues = $this->scanner->scanContent( '<a href="/x" aria-labelledby="nope">Pricing details</a>' );
         $types  = array_column( $issues, 'type' );
         $this->assertNotContains( 'empty_link', $types );
     }

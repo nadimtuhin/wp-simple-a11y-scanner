@@ -345,19 +345,34 @@ class Scanner {
     /**
      * Approximate a link's accessible name (WCAG 2.4.4 / 4.1.2).
      *
-     * Order follows the accessible-name computation: aria-labelledby (assumed
-     * to resolve), a non-blank aria-label, then text content including the alt
-     * text of contained images.
+     * Order follows the accessible-name computation: aria-labelledby (only
+     * when at least one referenced ID resolves to an element in the same
+     * document with non-empty text), a non-blank aria-label, then text content
+     * including the alt text of contained images.
      *
      * @param string $link_tag   Full <a>...</a> markup.
      * @param string $inner_html Markup between the tags.
+     * @param string $content    Full HTML document the link belongs to.
      * @return string Name, or '' when the link has none.
      */
-    private function linkAccessibleName( $link_tag, $inner_html ) {
+    private function linkAccessibleName( $link_tag, $inner_html, $content = '' ) {
         $open_tag = preg_match( '/^<a\b[^>]*>/i', $link_tag, $om ) ? $om[0] : '';
 
-        if ( preg_match( '/[\s"\']aria-labelledby\s*=\s*(["\'])\s*\S.*?\1/is', $open_tag ) ) {
-            return '[aria-labelledby]';
+        if ( preg_match( '/[\s"\']aria-labelledby\s*=\s*(["\'])(.*?)\1/is', $open_tag, $lbm ) ) {
+            $ids = preg_split( '/\s+/', trim( html_entity_decode( $lbm[2], ENT_QUOTES, 'UTF-8' ) ), -1, PREG_SPLIT_NO_EMPTY );
+            if ( $ids ) {
+                $texts = $this->idTextMap( $content );
+                $parts = [];
+                foreach ( $ids as $id ) {
+                    if ( isset( $texts[ $id ] ) && '' !== $texts[ $id ] ) {
+                        $parts[] = $texts[ $id ];
+                    }
+                }
+                if ( $parts ) {
+                    return implode( ' ', $parts );
+                }
+            }
+            // Unresolvable references are ignored; fall through to other sources.
         }
         if ( preg_match( '/[\s"\']aria-label\s*=\s*(["\'])(.*?)\1/is', $open_tag, $lm ) && '' !== trim( $lm[2] ) ) {
             return trim( html_entity_decode( $lm[2], ENT_QUOTES, 'UTF-8' ) );
@@ -376,6 +391,46 @@ class Scanner {
         );
 
         return trim( preg_replace( '/\s+/', ' ', strip_tags( $text ) ) );
+    }
+
+    /**
+     * Map element IDs in an HTML document to their normalised text content.
+     *
+     * The first element carrying a given ID wins, as with getElementById().
+     * Results are cached per document so repeated links reuse one parse.
+     *
+     * @param string $content HTML document.
+     * @return array<string,string> ID => trimmed, whitespace-collapsed text.
+     */
+    private function idTextMap( $content ) {
+        static $cache = [];
+        $key = md5( (string) $content );
+        if ( isset( $cache[ $key ] ) ) {
+            return $cache[ $key ];
+        }
+
+        $map = [];
+        if ( '' !== (string) $content && class_exists( 'DOMDocument' ) ) {
+            $doc      = new \DOMDocument();
+            $previous = libxml_use_internal_errors( true );
+            $doc->loadHTML( '<?xml encoding="UTF-8"><body>' . $content . '</body>', LIBXML_NONET );
+            libxml_clear_errors();
+            libxml_use_internal_errors( $previous );
+
+            $xpath = new \DOMXPath( $doc );
+            foreach ( $xpath->query( '//*[@id]' ) as $el ) {
+                $id = $el->getAttribute( 'id' );
+                if ( '' === $id || isset( $map[ $id ] ) ) {
+                    continue;
+                }
+                $map[ $id ] = trim( preg_replace( '/\s+/u', ' ', $el->textContent ) );
+            }
+        }
+
+        if ( count( $cache ) > 32 ) {
+            $cache = [];
+        }
+        return $cache[ $key ] = $map;
     }
 
     /**
@@ -457,7 +512,7 @@ class Scanner {
         ) {
             foreach ( $link_matches as $match ) {
                 $link_tag  = $match[0];
-                $link_text = $this->linkAccessibleName( $link_tag, $match[1] );
+                $link_text = $this->linkAccessibleName( $link_tag, $match[1], $content );
 
                 if ( $check_empty && $link_text === '' ) {
                     $issue = [

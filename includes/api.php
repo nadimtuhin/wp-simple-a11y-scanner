@@ -27,6 +27,19 @@ class Api {
         return simple_a11y_scanner_check_rate_limit( $limit, $window );
     }
 
+    /**
+     * Permission check for per-post routes: the user must be able to edit the
+     * specific post, otherwise any contributor could read meta and titles of
+     * other users' drafts and private posts.
+     *
+     * @param \WP_REST_Request $request
+     * @return bool
+     */
+    public function canEditRequestedPost( $request ): bool {
+        $post_id = (int) $request->get_param( 'post_id' );
+        return $post_id > 0 && \current_user_can( 'edit_post', $post_id );
+    }
+
     public function registerRoutes(): void {
         // --- v1 routes (kept for backward compat) ---
         register_rest_route( 'simple-a11y/v1', '/scan', [
@@ -62,7 +75,7 @@ class Api {
         register_rest_route( 'simple-a11y/v1', '/scan/post-meta/(?P<post_id>\d+)', [
             'methods'             => 'GET',
             'callback'            => [ $this, 'handleScanPostMeta' ],
-            'permission_callback' => fn() => \current_user_can( 'edit_posts' ),
+            'permission_callback' => [ $this, 'canEditRequestedPost' ],
             'args'                => [
                 'post_id' => [
                     'validate_callback' => fn( $v ) => is_numeric( $v ) && (int) $v > 0,
@@ -88,15 +101,16 @@ class Api {
             'callback'            => [ $this, 'handleAuditLog' ],
             'permission_callback' => fn() => \current_user_can( 'manage_options' ),
             'args'                => [
-                'per_page' => [ 'default' => 50, 'sanitize_callback' => 'absint' ],
-                'page'     => [ 'default' => 1,  'sanitize_callback' => 'absint' ],
+                // Clamp: per_page=0 would divide by zero (DivisionByZeroError on PHP 8).
+                'per_page' => [ 'default' => 50, 'sanitize_callback' => fn( $v ) => max( 1, min( 100, absint( $v ) ) ) ],
+                'page'     => [ 'default' => 1,  'sanitize_callback' => fn( $v ) => max( 1, absint( $v ) ) ],
             ],
         ] );
 
         register_rest_route( 'simple-a11y/v2', '/scan/social/(?P<post_id>\d+)', [
             'methods'             => 'GET',
             'callback'            => [ $this, 'handleSocialMetaScan' ],
-            'permission_callback' => fn() => \current_user_can( 'edit_posts' ),
+            'permission_callback' => [ $this, 'canEditRequestedPost' ],
             'args'                => [
                 'post_id' => [
                     'validate_callback' => fn( $v ) => is_numeric( $v ) && (int) $v > 0,
@@ -331,8 +345,8 @@ class Api {
         if ( ! class_exists( '\SimpleA11yScanner\AuditLog' ) ) {
             return new \WP_REST_Response( [ 'error' => 'Audit log not available' ], 503 );
         }
-        $per_page = (int) $request->get_param( 'per_page' );
-        $page     = (int) $request->get_param( 'page' );
+        $per_page = max( 1, (int) $request->get_param( 'per_page' ) );
+        $page     = max( 1, (int) $request->get_param( 'page' ) );
 
         $entries  = AuditLog::getEntries( $per_page, $page );
 

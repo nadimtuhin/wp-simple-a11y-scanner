@@ -6,11 +6,11 @@
  * @package SimpleA11yScanner
  */
 
+namespace SimpleA11yScanner;
+
 if ( ! defined( 'ABSPATH' ) ) {
     exit;
 }
-
-namespace SimpleA11yScanner;
 
 class AuditLog {
 

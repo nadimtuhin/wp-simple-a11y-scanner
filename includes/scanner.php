@@ -343,6 +343,42 @@ class Scanner {
     }
 
     /**
+     * Approximate a link's accessible name (WCAG 2.4.4 / 4.1.2).
+     *
+     * Order follows the accessible-name computation: aria-labelledby (assumed
+     * to resolve), a non-blank aria-label, then text content including the alt
+     * text of contained images.
+     *
+     * @param string $link_tag   Full <a>...</a> markup.
+     * @param string $inner_html Markup between the tags.
+     * @return string Name, or '' when the link has none.
+     */
+    private function linkAccessibleName( $link_tag, $inner_html ) {
+        $open_tag = preg_match( '/^<a\b[^>]*>/i', $link_tag, $om ) ? $om[0] : '';
+
+        if ( preg_match( '/[\s"\']aria-labelledby\s*=\s*(["\'])\s*\S.*?\1/is', $open_tag ) ) {
+            return '[aria-labelledby]';
+        }
+        if ( preg_match( '/[\s"\']aria-label\s*=\s*(["\'])(.*?)\1/is', $open_tag, $lm ) && '' !== trim( $lm[2] ) ) {
+            return trim( html_entity_decode( $lm[2], ENT_QUOTES, 'UTF-8' ) );
+        }
+
+        // Replace images with their alt text so it counts towards the name.
+        $text = preg_replace_callback(
+            '/<img\b[^>]*>/i',
+            function ( $im ) {
+                if ( preg_match( '/[\s"\'\/]alt\s*=\s*(["\'])(.*?)\1/is', $im[0], $am ) ) {
+                    return ' ' . $am[2] . ' ';
+                }
+                return ' ';
+            },
+            $inner_html
+        );
+
+        return trim( preg_replace( '/\s+/', ' ', strip_tags( $text ) ) );
+    }
+
+    /**
      * Scan HTML content for accessibility issues.
      *
      * @param string $content HTML to scan.
@@ -394,7 +430,8 @@ class Scanner {
         // a) Images missing alt attribute.
         if ( $check_alt && preg_match_all( '/<img\b[^>]*>/i', $content, $img_matches ) ) {
             foreach ( $img_matches[0] as $img_tag ) {
-                if ( ! preg_match( '/\balt\s*=/i', $img_tag ) ) {
+                // Require a real alt attribute: "\b" alone would also match data-alt=.
+                if ( ! preg_match( '/[\s"\'\/]alt\s*=/i', $img_tag ) ) {
                     $issue = [
                         'type'    => 'missing_alt',
                         'message' => 'Image missing alt attribute.',
@@ -420,7 +457,7 @@ class Scanner {
         ) {
             foreach ( $link_matches as $match ) {
                 $link_tag  = $match[0];
-                $link_text = trim( strip_tags( $match[1] ) );
+                $link_text = $this->linkAccessibleName( $link_tag, $match[1] );
 
                 if ( $check_empty && $link_text === '' ) {
                     $issue = [
